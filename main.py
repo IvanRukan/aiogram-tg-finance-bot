@@ -134,7 +134,8 @@ async def cmd_start(message: types.Message):
         '''Приветствую!
 /add_payment - внести трату;
 /add_event - создать новое мероприятие;
-/show_expenses - посмотреть смету за период.
+/show_expenses - посмотреть смету за период;
+/help - руководство пользователя.
         '''
     )
     await message.answer(welcome_text, reply_markup=start_keyboard)
@@ -164,6 +165,11 @@ async def cmd_show_expenses(message: types.Message):
     artists = await read_artists()
     artists_keyboard = get_artists_keyboard(artists)
     await message.reply('Выберите артиста:', reply_markup=artists_keyboard)
+
+
+@dp.message(Command('help'))
+async def cmd_help(message: types.Message):
+    await message.reply('Ссылка на документацию: https://github.com/IvanRukan/aiogram-tg-finance-bot')
 
 
 @dp.message(ArtistFilter())
