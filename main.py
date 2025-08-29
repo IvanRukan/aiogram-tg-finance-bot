@@ -51,6 +51,12 @@ async def async_update_title(schema, data, date):
     await loop.run_in_executor(executor, schema.update_title, data[0] + ' ' + date)
 
 
+async def async_get_all_rows(worksheet):
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(executor, worksheet.get_all_records)
+    return result
+
+
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
@@ -106,33 +112,39 @@ class ArtistFilter(Filter):
 
 start_keyboard = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="/add_payment"), KeyboardButton(text="/add_event")]
+        [KeyboardButton(text="/add_payment"), KeyboardButton(text="/add_event"),
+         KeyboardButton(text="/show_expenses"),]
     ],
     resize_keyboard=True
 )
+
+
+def get_artists_keyboard(artists):
+   return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=artist) for artist in artists]
+        ],
+
+    )
+
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     welcome_text = (
         '''Приветствую!
 /add_payment - внести трату;
-/add_event - создать новое мероприятие.
+/add_event - создать новое мероприятие;
+/show_expenses - посмотреть смету за период.
         '''
     )
     await message.answer(welcome_text, reply_markup=start_keyboard)
-
 
 
 @dp.message(Command("add_payment"))
 async def cmd_add_payment(message: types.Message):
     global current_cmd
     artists = await read_artists()
-    artists_keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=artist) for artist in artists]
-        ],
-
-    )
+    artists_keyboard = get_artists_keyboard(artists)
     current_cmd = message.text
     response_text = 'Выберите артиста:'
     await message.reply(response_text, reply_markup=artists_keyboard)
@@ -145,22 +157,36 @@ async def cmd_add_event(message: types.Message):
     await message.reply('Введите артиста и список дат в формате: АРТИСТ,гггг-мм-дд,гггг-мм-дд,гггг-мм-дд \nПример: HORUS,2025-05-22,2025-05-23,2025-05-25', reply_markup=ReplyKeyboardRemove())
 
 
+@dp.message(Command('show_expenses'))
+async def cmd_show_expenses(message: types.Message):
+    global current_cmd
+    current_cmd = message.text
+    artists = await read_artists()
+    artists_keyboard = get_artists_keyboard(artists)
+    await message.reply('Выберите артиста:', reply_markup=artists_keyboard)
+
+
 @dp.message(ArtistFilter())
 async def handle_artist_selection(message: types.Message):
+    global current_cmd
     artist = message.text
     response_text = await connect_to_spreadsheet(artist)
     if 'Установил' in response_text:
+        if current_cmd == '/add_payment':
+            response_text += 'Введите трату в формате (запятая разделитель, комментарий необязателен): \nдата,сумма,категория,кто потратил,комментарий. \nПример: 22.05.2025,500,Бытовой райдер,Кирилл,купил пиво'
+        elif current_cmd == '/show_expenses':
+            response_text += 'Введите период для трат в следующем формате: 22.05.2025,25.07.2026'
         await message.reply(response_text,reply_markup=ReplyKeyboardRemove())
     else:
         await message.reply(response_text, reply_markup=start_keyboard)
 
 
-async def connect_to_spreadsheet(artist): # может заморочусь с созданием нужного листа на траты, если он отсутствует
+async def connect_to_spreadsheet(artist):
     global client, spreadsheet, worksheet
     try:
         spreadsheet = await get_spreadsheet(artist)
         worksheet = await get_worksheet('Общие траты', spreadsheet)
-        return 'Установил соединение! Введите трату в формате (запятая разделитель, комментарий необязателен): \nдата,сумма,категория,кто потратил,комментарий. \nПример: 22.05.2025,500,Бытовой райдер,Кирилл,купил пиво'
+        return 'Установил соединение!'
     except (SpreadsheetNotFound, WorksheetNotFound) as e:
         return f'Не нашел такого мероприятия! Ошибка: {e}'
 
@@ -210,6 +236,27 @@ async def copy_spreadsheet(data):
         await async_update_title(new_schema, data, date)
 
 
+async def get_expenses_by_dates(start, end):
+    global worksheet
+    start = datetime.datetime.strptime(start, "%d.%m.%Y")
+    end = datetime.datetime.strptime(end, "%d.%m.%Y")
+    data = await async_get_all_rows(worksheet)
+    result = {}
+    for row in data:
+        try:
+            date = datetime.datetime.strptime(row.get('Дата'), "%d.%m.%Y")
+        except ValueError:
+            date = datetime.datetime.strptime(row.get('Дата'), "%d-%m-%Y")
+        if start <= date <= end:
+            category = row.get('Категория')
+            amount = row.get('Сумма')
+            if category not in result.keys():
+                result[category] = amount
+                continue
+            result[category] += amount
+    return result
+
+
 @dp.message()
 async def message_handling(message: types.Message):
     global worksheet, current_cmd, spreadsheet
@@ -217,9 +264,9 @@ async def message_handling(message: types.Message):
     if current_cmd == '/add_payment':
         try:
             date_obj = datetime.datetime.strptime(data[0], "%d.%m.%Y")
-            data[0] = date_obj.strftime("%Y-%m-%d")
+            data[0] = date_obj.strftime("%d-%m-%Y")
             int(data[1])
-            await async_append_row(worksheet, data) #синхронная херня, надо переделать
+            await async_append_row(worksheet, data)
             current_cmd = None
             await message.reply('Запись успешно добавлена!', reply_markup=start_keyboard)
         except (AttributeError, ValueError):
@@ -235,6 +282,16 @@ async def message_handling(message: types.Message):
             await message.reply('Успешно создал листы под мероприятие!', reply_markup=start_keyboard)
         except SpreadsheetNotFound:
             await message.reply('Сначала создайте таблицу с соответствующим артистом!', reply_markup=start_keyboard)
+    elif current_cmd == '/show_expenses':
+        try:
+            result = await get_expenses_by_dates(data[0], data[1])
+            reply_text = ''
+            for key, val in result.items():
+                reply_text += f'{key}: {val}\n'
+            reply_text += f'Всего: {sum(result.values())}'
+            await message.answer(reply_text, reply_markup=start_keyboard)
+        except IndexError:
+            print('индекс вылетел')
     else:
         current_cmd = None
         await message.reply('Выберите команду!')
