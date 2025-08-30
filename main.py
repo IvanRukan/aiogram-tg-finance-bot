@@ -113,7 +113,7 @@ class ArtistFilter(Filter):
 start_keyboard = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="/add_payment"), KeyboardButton(text="/add_event"),
-         KeyboardButton(text="/show_expenses"),]
+         KeyboardButton(text="/show_expenses"), KeyboardButton(text='/help')]
     ],
     resize_keyboard=True
 )
@@ -124,6 +124,7 @@ def get_artists_keyboard(artists):
         keyboard=[
             [KeyboardButton(text=artist) for artist in artists]
         ],
+       resize_keyboard=True
 
     )
 
@@ -266,7 +267,11 @@ async def get_expenses_by_dates(start, end):
 @dp.message()
 async def message_handling(message: types.Message):
     global worksheet, current_cmd, spreadsheet
-    data = message.text.split(',')
+    try:
+        data = message.text.split(',')
+    except AttributeError:
+        await message.reply('Спасибо за стикер! Но выбери команду из списка!', reply_markup=start_keyboard)
+        return
     if current_cmd == '/add_payment':
         try:
             date_obj = datetime.datetime.strptime(data[0], "%d.%m.%Y")
@@ -278,13 +283,13 @@ async def message_handling(message: types.Message):
         except (AttributeError, ValueError):
             await message.reply('Соединение еще не установлено или формат ввода неверен!', reply_markup=start_keyboard)
     elif current_cmd == '/add_event':
-        artists = await read_artists()
-        if data[0] not in artists:
 
-            await write_artists(data[0])
         current_cmd = None
         try:
             await copy_spreadsheet(data)
+            artists = await read_artists()
+            if data[0] not in artists:
+                await write_artists(data[0])
             await message.reply('Успешно создал листы под мероприятие!', reply_markup=start_keyboard)
         except SpreadsheetNotFound:
             await message.reply('Сначала создайте таблицу с соответствующим артистом!', reply_markup=start_keyboard)
@@ -297,7 +302,7 @@ async def message_handling(message: types.Message):
             reply_text += f'Всего: {sum(result.values())}'
             await message.answer(reply_text, reply_markup=start_keyboard)
         except IndexError:
-            print('индекс вылетел')
+            await message.reply('Формат ввода неверен! Повторите операцию.', reply_markup=start_keyboard)
     else:
         current_cmd = None
         await message.reply('Выберите команду!')
