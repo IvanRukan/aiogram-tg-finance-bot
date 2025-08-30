@@ -10,7 +10,7 @@ from aiogram.types import ReplyKeyboardRemove
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 from gspread.exceptions import SpreadsheetNotFound, WorksheetNotFound
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from gspread import Cell
 
 
@@ -120,13 +120,13 @@ start_keyboard = ReplyKeyboardMarkup(
 
 
 def get_artists_keyboard(artists):
-   return ReplyKeyboardMarkup(
+    kb = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=artist) for artist in artists]
+            [KeyboardButton(text=artist)] for artist in artists
         ],
-       resize_keyboard=True
-
+        resize_keyboard=True
     )
+    return kb
 
 
 @dp.message(Command("start"))
