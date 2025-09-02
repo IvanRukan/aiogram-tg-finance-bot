@@ -112,18 +112,19 @@ class ArtistFilter(Filter):
 
 start_keyboard = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="/add_payment"), KeyboardButton(text="/add_event"),
-         KeyboardButton(text="/show_expenses"), KeyboardButton(text='/help')]
+        [KeyboardButton(text="/добавить_трату"), KeyboardButton(text="/добавить_событие")],
+         [KeyboardButton(text="/просмотреть_траты")], [KeyboardButton(text='/помощь')]
     ],
     resize_keyboard=True
 )
 
 
 def get_artists_keyboard(artists):
+    buttons = [[KeyboardButton(text=artist)] for artist in artists]
+    buttons.append([KeyboardButton(text='/start')])
     kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=artist)] for artist in artists
-        ],
+        keyboard= buttons
+        ,
         resize_keyboard=True
     )
     return kb
@@ -133,16 +134,16 @@ def get_artists_keyboard(artists):
 async def cmd_start(message: types.Message):
     welcome_text = (
         '''Приветствую!
-/add_payment - внести трату;
-/add_event - создать новое мероприятие;
-/show_expenses - посмотреть смету за период;
-/help - руководство пользователя.
+/добавить_трату - внести трату;
+/добавить_событие - создать новое мероприятие;
+/просмотреть_траты - посмотреть смету за период;
+/помощь - руководство пользователя.
         '''
     )
     await message.answer(welcome_text, reply_markup=start_keyboard)
 
 
-@dp.message(Command("add_payment"))
+@dp.message(Command("добавить_трату"))
 async def cmd_add_payment(message: types.Message):
     global current_cmd
     artists = await read_artists()
@@ -152,14 +153,14 @@ async def cmd_add_payment(message: types.Message):
     await message.reply(response_text, reply_markup=artists_keyboard)
 
 
-@dp.message(Command('add_event'))
+@dp.message(Command('добавить_событие'))
 async def cmd_add_event(message: types.Message):
     global current_cmd
     current_cmd = message.text
-    await message.reply('Введите артиста и список дат в формате: АРТИСТ,гггг-мм-дд,гггг-мм-дд,гггг-мм-дд \nПример: HORUS,2025-05-22,2025-05-23,2025-05-25', reply_markup=ReplyKeyboardRemove())
+    await message.reply('Введите артиста и список дат в формате: АРТИСТ,гггг-мм-дд,гггг-мм-дд,гггг-мм-дд \nПример: HORUS,2025-05-22,2025-05-23,2025-05-25', reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='/start')]], resize_keyboard=True))
 
 
-@dp.message(Command('show_expenses'))
+@dp.message(Command('просмотреть_траты'))
 async def cmd_show_expenses(message: types.Message):
     global current_cmd
     current_cmd = message.text
@@ -168,7 +169,7 @@ async def cmd_show_expenses(message: types.Message):
     await message.reply('Выберите артиста:', reply_markup=artists_keyboard)
 
 
-@dp.message(Command('help'))
+@dp.message(Command('помощь'))
 async def cmd_help(message: types.Message):
     await message.reply('Ссылка на документацию: https://github.com/IvanRukan/aiogram-tg-finance-bot')
 
@@ -179,11 +180,11 @@ async def handle_artist_selection(message: types.Message):
     artist = message.text
     response_text = await connect_to_spreadsheet(artist)
     if 'Установил' in response_text:
-        if current_cmd == '/add_payment':
+        if current_cmd == '/добавить_трату':
             response_text += 'Введите трату в формате (запятая разделитель, комментарий необязателен): \nдата,сумма,категория,кто потратил,комментарий. \nПример: 22.05.2025,500,Бытовой райдер,Кирилл,купил пиво\nДоступные категории: Технический довоз, Аренда площадки, Персонал, Гостиница, Бытовой райдер, Еда, Суточные, Билеты, Транспорт, Такси, Багаж, Доп. место.'
-        elif current_cmd == '/show_expenses':
+        elif current_cmd == '/просмотреть_траты':
             response_text += 'Введите период для трат в следующем формате: 22.05.2025,25.07.2026'
-        await message.reply(response_text,reply_markup=ReplyKeyboardRemove())
+        await message.reply(response_text,reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='/start')]], resize_keyboard=True))
     else:
         await message.reply(response_text, reply_markup=start_keyboard)
 
@@ -195,7 +196,7 @@ async def connect_to_spreadsheet(artist):
         worksheet = await get_worksheet('Общие траты', spreadsheet)
         return 'Установил соединение!'
     except (SpreadsheetNotFound, WorksheetNotFound) as e:
-        return f'Не нашел такого мероприятия! Ошибка: {e}'
+        return f'Не нашел такого мероприятия!'
 
 
 async def copy_spreadsheet(data):
@@ -272,7 +273,7 @@ async def message_handling(message: types.Message):
     except AttributeError:
         await message.reply('Спасибо за стикер! Но выбери команду из списка!', reply_markup=start_keyboard)
         return
-    if current_cmd == '/add_payment':
+    if current_cmd == '/добавить_трату':
         try:
             date_obj = datetime.datetime.strptime(data[0], "%d.%m.%Y")
             data[0] = date_obj.strftime("%d-%m-%Y")
@@ -282,7 +283,7 @@ async def message_handling(message: types.Message):
             await message.reply('Запись успешно добавлена!', reply_markup=start_keyboard)
         except (AttributeError, ValueError):
             await message.reply('Соединение еще не установлено или формат ввода неверен!', reply_markup=start_keyboard)
-    elif current_cmd == '/add_event':
+    elif current_cmd == '/добавить_событие':
 
         current_cmd = None
         try:
@@ -293,7 +294,7 @@ async def message_handling(message: types.Message):
             await message.reply('Успешно создал листы под мероприятие!', reply_markup=start_keyboard)
         except SpreadsheetNotFound:
             await message.reply('Сначала создайте таблицу с соответствующим артистом!', reply_markup=start_keyboard)
-    elif current_cmd == '/show_expenses':
+    elif current_cmd == '/просмотреть_траты':
         try:
             result = await get_expenses_by_dates(data[0], data[1])
             reply_text = ''
