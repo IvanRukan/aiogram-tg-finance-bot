@@ -46,14 +46,20 @@ async def async_update_cells(schema, cells):
                                )
 
 
-async def async_update_title(schema, data, date):
+async def async_update_title(schema, new_title):
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(executor, schema.update_title, data[0] + ' ' + date)
+    await loop.run_in_executor(executor, schema.update_title, new_title)
 
 
 async def async_get_all_rows(worksheet):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(executor, worksheet.get_all_records)
+    return result
+
+
+async def async_get_date_value(worksheet, address):
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(executor, worksheet.acell, address)
     return result
 
 
@@ -157,7 +163,7 @@ async def cmd_add_payment(message: types.Message):
 async def cmd_add_event(message: types.Message):
     global current_cmd
     current_cmd = message.text
-    await message.reply('Введите артиста и список дат в формате: АРТИСТ,гггг-мм-дд,гггг-мм-дд,гггг-мм-дд \nПример: HORUS,2025-05-22,2025-05-23,2025-05-25', reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='/start')]], resize_keyboard=True))
+    await message.reply('Введите артиста и список дат в формате: АРТИСТ,ГОРОД:дд-мм-гггг,ГОРОД:дд-мм-гггг\nПример: HORUS,Новосибирск:22-05-2025,Казань:23-05-2025', reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='/start')]], resize_keyboard=True))
 
 
 @dp.message(Command('просмотреть_траты'))
@@ -181,9 +187,9 @@ async def handle_artist_selection(message: types.Message):
     response_text = await connect_to_spreadsheet(artist)
     if 'Установил' in response_text:
         if current_cmd == '/добавить_трату':
-            response_text += 'Введите трату в формате (запятая разделитель, комментарий необязателен): \nдата,сумма,категория,кто потратил,комментарий. \nПример: 22.05.2025,500,Бытовой райдер,Кирилл,купил пиво\nДоступные категории: Технический довоз, Аренда площадки, Персонал, Гостиница, Бытовой райдер, Еда, Суточные, Билеты, Транспорт, Такси, Багаж, Доп. место.'
+            response_text += '\nВведите трату в формате (запятая разделитель, комментарий необязателен): \nгород,сумма,категория,кто потратил,комментарий. \nПример: Новосибирск,500,Бытовой райдер,Кирилл,купил пиво\n\n\nДоступные категории: Технический довоз, Аренда площадки, Персонал, Гостиница, Бытовой райдер, Еда, Суточные, Билеты, Транспорт, Такси, Багаж, Доп. место, Дизайн, Реклама, Зарплата.'
         elif current_cmd == '/просмотреть_траты':
-            response_text += 'Введите период для трат в следующем формате: 22.05.2025,25.07.2026'
+            response_text += 'Введите период для трат в следующем формате: 22-05-2025,25-07-2026'
         await message.reply(response_text,reply_markup=ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text='/start')]], resize_keyboard=True))
     else:
         await message.reply(response_text, reply_markup=start_keyboard)
@@ -209,45 +215,52 @@ async def copy_spreadsheet(data):
     except WorksheetNotFound:
         copied_payment = await async_copy(pattern_payment, target_spreadsheet)
         new_payment = await async_worksheet_by_id(target_spreadsheet, copied_payment)
-        await async_update_title(new_payment, ['Общие'], 'траты')
-    for date in data[1:]:
+        await async_update_title(new_payment, 'Общие траты')
+    for value in data[1:]:
         copied_schema = await async_copy(pattern_schema, target_spreadsheet)
         new_schema = await async_worksheet_by_id(target_spreadsheet, copied_schema)
+        event_city, event_date = value.split(':')
         cells_to_update = [
-            Cell(row=1, col=1, value=data[0] + ' ' + date),
+            Cell(row=1, col=1, value=data[0] + ' ' + event_date + ' ' + event_city),
             Cell(row=5, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Технический довоз'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Технический довоз'\")); 0)"),
             Cell(row=6, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Аренда площадки'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Аренда площадки'\")); 0)"),
             Cell(row=7, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Персонал'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Персонал'\")); 0)"),
             Cell(row=13, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Гостиница'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Гостиница'\")); 0)"),
             Cell(row=14, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Бытовой райдер'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Бытовой райдер'\")); 0)"),
             Cell(row=15, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Еда'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Еда'\")); 0)"),
             Cell(row=16, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Суточные'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Суточные'\")); 0)"),
             Cell(row=22, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Билеты'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Билеты'\")); 0)"),
             Cell(row=23, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Транспорт'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Транспорт'\")); 0)"),
             Cell(row=24, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Такси'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Такси'\")); 0)"),
             Cell(row=25, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Багаж'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Багаж'\")); 0)"),
             Cell(row=26, col=2,
-                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = date '{date}' and C = 'Доп. место'\")); 0)"),
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Доп. место'\")); 0)"),
+            Cell(row=32, col=2,
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Дизайн'\")); 0)"),
+            Cell(row=33, col=2,
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Реклама'\")); 0)"),
+            Cell(row=34, col=2,
+                 value=f"=IFERROR(SUM(QUERY('Общие траты'!A2:C600; \"select B where A = '{event_city}' and C = 'Зарплата'\")); 0)"),
         ]
         await async_update_cells(new_schema, cells_to_update)
-        await async_update_title(new_schema, data, date)
+        await async_update_title(new_schema, event_city)
 
 
 async def get_expenses_by_dates(start, end):
     global worksheet
-    start = datetime.datetime.strptime(start, "%d.%m.%Y")
-    end = datetime.datetime.strptime(end, "%d.%m.%Y")
+    start = datetime.datetime.strptime(start, "%d-%m-%Y")
+    end = datetime.datetime.strptime(end, "%d-%m-%Y")
     data = await async_get_all_rows(worksheet)
     result = {}
     for row in data:
@@ -258,10 +271,18 @@ async def get_expenses_by_dates(start, end):
         if start <= date <= end:
             category = row.get('Категория')
             amount = row.get('Сумма')
+            try:
+                parts = amount.split()
+                cleaned_amount = ''.join(parts)
+                if not cleaned_amount.isdigit():
+                    return 'В столбце есть недопустимые значения!'
+                cleaned_amount = int(cleaned_amount)
+            except AttributeError:
+                cleaned_amount = int(amount)
             if category not in result.keys():
-                result[category] = amount
+                result[category] = cleaned_amount
                 continue
-            result[category] += amount
+            result[category] += cleaned_amount
     return result
 
 
@@ -275,16 +296,27 @@ async def message_handling(message: types.Message):
         return
     if current_cmd == '/добавить_трату':
         try:
-            date_obj = datetime.datetime.strptime(data[0], "%d.%m.%Y")
-            data[0] = date_obj.strftime("%d-%m-%Y")
+            # date_obj = datetime.datetime.strptime(data[0], "%d.%m.%Y")
+            # data[0] = date_obj.strftime("%d-%m-%Y")
+            amount = data[1].split()
+            cleaned_amount = ''.join(amount)
+            data[1] = cleaned_amount
             int(data[1])
+            try:
+                payment_date =  await async_get_date_value(await get_worksheet(data[0], spreadsheet), 'A1')
+            except WorksheetNotFound:
+                await message.reply('Такого города не существует! (может и существует, но вот лист с мероприятием на него не создан)', reply_markup=start_keyboard)
+                return
+            payment_date = payment_date.value
+            payment_date = payment_date.split()
+            payment_date = payment_date[1]
+            data.insert(4, payment_date)
             await async_append_row(worksheet, data)
             current_cmd = None
             await message.reply('Запись успешно добавлена!', reply_markup=start_keyboard)
         except (AttributeError, ValueError):
             await message.reply('Соединение еще не установлено или формат ввода неверен!', reply_markup=start_keyboard)
     elif current_cmd == '/добавить_событие':
-
         current_cmd = None
         try:
             await copy_spreadsheet(data)
@@ -298,9 +330,12 @@ async def message_handling(message: types.Message):
         try:
             result = await get_expenses_by_dates(data[0], data[1])
             reply_text = ''
-            for key, val in result.items():
-                reply_text += f'{key}: {val}\n'
-            reply_text += f'Всего: {sum(result.values())}'
+            try:
+                for key, val in result.items():
+                    reply_text += f'{key}: {val}\n'
+                reply_text += f'Всего: {sum(result.values())}'
+            except AttributeError:
+                reply_text = result
             await message.answer(reply_text, reply_markup=start_keyboard)
         except IndexError:
             await message.reply('Формат ввода неверен! Повторите операцию.', reply_markup=start_keyboard)
