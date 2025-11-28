@@ -6,7 +6,7 @@ import aiofiles
 import gspread
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, Filter
-from aiogram.types import ReplyKeyboardRemove
+from string import punctuation
 from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 from gspread.exceptions import SpreadsheetNotFound, WorksheetNotFound
@@ -53,7 +53,8 @@ async def async_update_title(schema, new_title):
 
 async def async_get_all_rows(worksheet):
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(executor, worksheet.get_all_records)
+    result = await loop.run_in_executor(executor,
+                                        lambda: worksheet.get_all_records(expected_headers=['Город','Сумма','Категория','Кто потратил','Дата','Комментарий']))
     return result
 
 
@@ -259,17 +260,23 @@ async def copy_spreadsheet(data):
 
 async def get_expenses_by_dates(start, end):
     global worksheet
-    start = datetime.datetime.strptime(start, "%d-%m-%Y")
-    end = datetime.datetime.strptime(end, "%d-%m-%Y")
+    try:
+        start = datetime.datetime.strptime(start, "%d-%m-%Y")
+        end = datetime.datetime.strptime(end, "%d-%m-%Y")
+    except ValueError:
+        return 'Неверный формат ввода...'
     data = await async_get_all_rows(worksheet)
     result = {}
     for row in data:
+        date_to_format = row.get('Дата').strip(punctuation + ' ')
+        if len(date_to_format) == 0:
+            continue
         try:
-            date = datetime.datetime.strptime(row.get('Дата'), "%d.%m.%Y")
+            date = datetime.datetime.strptime(date_to_format, "%d.%m.%Y")
         except ValueError:
-            date = datetime.datetime.strptime(row.get('Дата'), "%d-%m-%Y")
+            date = datetime.datetime.strptime(date_to_format, "%d-%m-%Y")
         if start <= date <= end:
-            category = row.get('Категория')
+            category = row.get('Категория').strip(punctuation + ' ')
             amount = row.get('Сумма')
             try:
                 parts = amount.split()
@@ -296,8 +303,6 @@ async def message_handling(message: types.Message):
         return
     if current_cmd == '/добавить_трату':
         try:
-            # date_obj = datetime.datetime.strptime(data[0], "%d.%m.%Y")
-            # data[0] = date_obj.strftime("%d-%m-%Y")
             amount = data[1].split()
             cleaned_amount = ''.join(amount)
             data[1] = cleaned_amount
