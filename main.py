@@ -4,6 +4,8 @@ import datetime
 import os
 import aiofiles
 import gspread
+import re
+import pytz
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, Filter
 from string import punctuation
@@ -84,6 +86,8 @@ worksheet = None
 current_cmd = None
 
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=15)
+
+moscow_tz = pytz.timezone('Europe/Moscow')
 
 load_dotenv()
 
@@ -313,9 +317,11 @@ async def message_handling(message: types.Message):
                 await message.reply('Такого города не существует! (может и существует, но вот лист с мероприятием на него не создан)', reply_markup=start_keyboard)
                 return
             payment_date = payment_date.value
-            payment_date = payment_date.split()
-            payment_date = payment_date[1]
+            date_pattern = r'\d{2}-\d{2}-\d{4}'
+            date_match = re.search(date_pattern, payment_date)
+            payment_date = date_match.group(0)
             data.insert(4, payment_date)
+            data.append(datetime.datetime.now(moscow_tz).strftime('%H:%M'))
             await async_append_row(worksheet, data)
             current_cmd = None
             await message.reply('Запись успешно добавлена!', reply_markup=start_keyboard)
