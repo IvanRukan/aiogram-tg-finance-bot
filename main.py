@@ -317,11 +317,16 @@ async def message_handling(message: types.Message):
                 await message.reply('Такого города не существует! (может и существует, но вот лист с мероприятием на него не создан)', reply_markup=start_keyboard)
                 return
             payment_date = payment_date.value
-            date_pattern = r'\d{2}-\d{2}-\d{4}'
+            if '-' in payment_date:
+                date_pattern = r'\d{2}-\d{2}-\d{4}'
+            else:
+                date_pattern = r'\d{2}.\d{2}.\d{4}'
             date_match = re.search(date_pattern, payment_date)
             payment_date = date_match.group(0)
             data.insert(4, payment_date)
             data.append(datetime.datetime.now(moscow_tz).strftime('%H:%M'))
+            if len(data) < 7:
+                data.insert(5, '')
             await async_append_row(worksheet, data)
             current_cmd = None
             await message.reply('Запись успешно добавлена!', reply_markup=start_keyboard)
